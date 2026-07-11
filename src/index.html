@@ -1,17 +1,309 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="styles.css">
-  <title>Vanilla JavaScript App</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Text Analysis Pipeline</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card-bg: #1a1d24;
+    --border: #2a2e37;
+    --text: #e8e9ec;
+    --muted: #9aa0ab;
+    --accent: #4f8cff;
+    --positive: #33c17a;
+    --neutral: #c1a233;
+    --negative: #e05a5a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 32px 16px 64px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-top: 0; margin-bottom: 24px; font-size: 0.95rem; }
+
+  textarea {
+    width: 100%;
+    min-height: 100px;
+    resize: vertical;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 12px;
+    font-size: 0.95rem;
+    font-family: inherit;
+  }
+  textarea:focus { outline: none; border-color: var(--accent); }
+
+  .controls { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 20px;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .status-bar {
+    margin-top: 8px;
+    font-size: 0.9rem;
+    color: var(--muted);
+    min-height: 1.2em;
+  }
+  .status-bar.done { color: var(--positive); }
+  .status-bar.error { color: var(--negative); }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    margin-top: 24px;
+  }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    min-height: 160px;
+  }
+  .card h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+
+  .spinner {
+    width: 22px;
+    height: 22px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 20px auto;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .sentiment-label {
+    font-size: 1.1rem;
+    font-weight: 600;
+    text-transform: capitalize;
+    margin-bottom: 12px;
+  }
+  .sentiment-label.positive { color: var(--positive); }
+  .sentiment-label.neutral { color: var(--neutral); }
+  .sentiment-label.negative { color: var(--negative); }
+
+  .conf-row { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; margin-bottom: 6px; }
+  .conf-row .name { width: 60px; color: var(--muted); text-transform: capitalize; }
+  .conf-track { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .conf-fill { height: 100%; border-radius: 4px; }
+  .conf-fill.positive { background: var(--positive); }
+  .conf-fill.neutral { background: var(--neutral); }
+  .conf-fill.negative { background: var(--negative); }
+  .conf-pct { width: 40px; text-align: right; color: var(--muted); }
+
+  .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    background: rgba(79, 140, 255, 0.15);
+    color: var(--accent);
+    border: 1px solid rgba(79, 140, 255, 0.35);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 0.8rem;
+  }
+
+  .entity-list { display: flex; flex-direction: column; gap: 8px; }
+  .entity-badge {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+  }
+  .entity-badge .category {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    background: var(--border);
+    border-radius: 4px;
+    padding: 2px 6px;
+  }
+
+  .empty { color: var(--muted); font-size: 0.85rem; }
+</style>
 </head>
-
 <body>
-  <main>
-    <h1>Vanilla JavaScript App</h1>
-  </main>
-</body>
+<div class="wrap">
+  <h1>AI Text Analysis Pipeline</h1>
+  <p class="subtitle">Submit text — sentiment, key phrase, and entity analysis run in parallel via Service Bus fan-out.</p>
 
+  <textarea id="input-text" placeholder="Paste a paragraph of text here (product review, news snippet, sentence)..."></textarea>
+  <div class="controls">
+    <button id="analyse-btn">Analyse</button>
+  </div>
+  <div id="status-bar" class="status-bar"></div>
+
+  <div class="cards">
+    <div class="card" id="card-sentiment">
+      <h2>Sentiment</h2>
+      <div class="card-body"><p class="empty">Submit text to see results.</p></div>
+    </div>
+    <div class="card" id="card-keyphrases">
+      <h2>Key Phrases</h2>
+      <div class="card-body"><p class="empty">Submit text to see results.</p></div>
+    </div>
+    <div class="card" id="card-entities">
+      <h2>Entities</h2>
+      <div class="card-body"><p class="empty">Submit text to see results.</p></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_BASE = "https://<uniqueFunctionAppName>.azurewebsites.net";
+
+const analyseBtn = document.getElementById("analyse-btn");
+const inputText = document.getElementById("input-text");
+const statusBar = document.getElementById("status-bar");
+const cardBodies = {
+  sentiment: document.querySelector("#card-sentiment .card-body"),
+  keyphrases: document.querySelector("#card-keyphrases .card-body"),
+  entities: document.querySelector("#card-entities .card-body"),
+};
+
+let pollHandle = null;
+
+function setStatus(text, cls) {
+  statusBar.textContent = text;
+  statusBar.className = "status-bar" + (cls ? " " + cls : "");
+}
+
+function showSpinner(field) {
+  cardBodies[field].innerHTML = '<div class="spinner"></div>';
+}
+
+function renderSentiment(sentiment) {
+  const label = sentiment.label || "unknown";
+  const confidence = sentiment.confidence || {};
+  const rows = ["positive", "neutral", "negative"].map((key) => {
+    const pct = Math.round((confidence[key] || 0) * 100);
+    return `
+      <div class="conf-row">
+        <span class="name">${key}</span>
+        <div class="conf-track"><div class="conf-fill ${key}" style="width:${pct}%"></div></div>
+        <span class="conf-pct">${pct}%</span>
+      </div>`;
+  }).join("");
+
+  cardBodies.sentiment.innerHTML = `
+    <div class="sentiment-label ${label}">${label}</div>
+    ${rows}
+  `;
+}
+
+function renderKeyPhrases(phrases) {
+  if (!phrases.length) {
+    cardBodies.keyphrases.innerHTML = '<p class="empty">No key phrases detected.</p>';
+    return;
+  }
+  cardBodies.keyphrases.innerHTML = `
+    <div class="tag-list">
+      ${phrases.map((p) => `<span class="tag">${escapeHtml(p)}</span>`).join("")}
+    </div>`;
+}
+
+function renderEntities(entities) {
+  if (!entities.length) {
+    cardBodies.entities.innerHTML = '<p class="empty">No entities detected.</p>';
+    return;
+  }
+  cardBodies.entities.innerHTML = `
+    <div class="entity-list">
+      ${entities.map((e) => `
+        <div class="entity-badge">
+          <span>${escapeHtml(e.text)}</span>
+          <span class="category">${escapeHtml(e.category)}</span>
+        </div>`).join("")}
+    </div>`;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+async function submitText() {
+  const text = inputText.value.trim();
+  if (!text) {
+    setStatus("Enter some text before analysing.", "error");
+    return;
+  }
+
+  analyseBtn.disabled = true;
+  if (pollHandle) clearInterval(pollHandle);
+
+  showSpinner("sentiment");
+  showSpinner("keyphrases");
+  showSpinner("entities");
+  setStatus("Submitting job...");
+
+  try {
+    const res = await fetch(`${API_BASE}/api/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) throw new Error(`submit failed: ${res.status}`);
+    const { job_id } = await res.json();
+    setStatus("Job submitted — waiting for subscribers to complete...");
+    pollResults(job_id);
+  } catch (err) {
+    setStatus(`Error: ${err.message}`, "error");
+    analyseBtn.disabled = false;
+  }
+}
+
+function pollResults(jobId) {
+  pollHandle = setInterval(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/results/${jobId}`);
+      if (!res.ok) return;
+      const job = await res.json();
+
+      if (job.sentiment) renderSentiment(job.sentiment);
+      if (job.keyphrases) renderKeyPhrases(job.keyphrases);
+      if (job.entities) renderEntities(job.entities);
+
+      if (job.sentiment && job.keyphrases && job.entities) {
+        clearInterval(pollHandle);
+        setStatus("All three subscribers completed", "done");
+        analyseBtn.disabled = false;
+      }
+    } catch (err) {
+      // transient network error while polling; keep trying until interval is cleared
+    }
+  }, 1500);
+}
+
+analyseBtn.addEventListener("click", submitText);
+</script>
+</body>
 </html>
